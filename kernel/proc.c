@@ -291,6 +291,8 @@ fork(void)
 
   safestrcpy(np->name, p->name, sizeof(p->name));
 
+  np->mask = p->mask;  // 将掩码拷贝到子进程里（lab2task1)
+
   pid = np->pid;
 
   np->state = RUNNABLE;
@@ -691,5 +693,19 @@ procdump(void)
       state = "???";
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
+  }
+}
+
+// count used process(lab2task2)
+void
+numproc(uint64 *dst)
+{
+  struct proc* p; 
+  *dst = 0;
+
+  for (p=proc; p < &proc[NPROC]; p++) {  // 遍历proc数组
+    if (p->state != UNUSED) {
+      (*dst)++;
+    }
   }
 }

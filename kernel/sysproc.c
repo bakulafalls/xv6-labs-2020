@@ -6,6 +6,10 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
+
+void freemem(uint64*);
+void numproc(uint64*);
 
 uint64
 sys_exit(void)
@@ -95,3 +99,40 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// lab code(lab2task1)
+// trace the system call
+uint64
+sys_trace(void) 
+{
+	int mask;
+	if (argint(0, &mask) < 0) {
+		return -1;
+	}
+	
+	myproc()->mask = mask;
+	return 0;
+}
+
+// lab code(lab2task2)
+// get system info
+uint64
+sys_sysinfo(void)
+{
+  uint64 addr;
+  if (argaddr(0, &addr) < 0) {  // 获取用户空间的虚拟地址，储存在addr中
+    return -1;
+  }
+
+  struct proc *p = myproc();
+  struct sysinfo info;
+
+  freemem(&info.freemem);
+  numproc(&info.nproc);
+  if(copyout(p->pagetable, addr, (char *)&info, sizeof(info)) < 0) {  // 参见sysfile.c中示例用法
+    return -1;
+  }
+
+  return 0;
+}
+	

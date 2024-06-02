@@ -80,3 +80,20 @@ kalloc(void)
     memset((char*)r, 5, PGSIZE); // fill with junk
   return (void*)r;
 }
+
+// 内存通过链表管理（见kalloc.c：struct run, struct kmem），因此遍历kmem中的空闲链表以获取所有空闲内存 (lab2task2)
+void
+freemem(uint64 *dst)
+{
+  struct run* r;  // 用于遍历
+  *dst = 0;  // 空闲内存页的数量
+  acquire(&kmem.lock);  // 获取锁，确保在遍历链表时不会有其他进程修改链表
+  r = kmem.freelist;  
+  while (r) {
+    (*dst) += 1;
+    r = r->next;
+  }
+
+  release(&kmem.lock);
+  *dst = (*dst) << 12;  // 见书Fig3.2， 每个内存页的大小是 4096 字节（2^12）
+}
