@@ -440,3 +440,39 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
     return -1;
   }
 }
+
+/**
+ *@brief 打印页表 
+ *@param pagetable 所要打印的页表
+ *@param level 当前页表所在层级
+*/
+void
+_vmprint(pagetable_t pagetable, int level)
+{
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = pagetable[i];
+    if(pte & PTE_V){   // 有效的页表项
+      for (int j = 0; j < level; j++){  // level=1/2/3
+        if (j) printf(" ");
+        printf("..");
+      }
+
+      uint64 child = PTE2PA(pte);
+      printf("%d: pte %p pa %p", i, pte, child);
+      if (pte & (PTE_R|PTE_W|PTE_X))
+      // 该PTE指向下一级页表
+      {
+        _vmprint((pagetable_t) child, level+1);   // 递归
+      }
+    } 
+  }
+  kfree((void*)pagetable);
+}
+
+void
+vmprint(pagetable_t pagetable)
+{
+  printf("page table %p\n", pagetable);
+  _vmprint(pagetable, 1);
+}
