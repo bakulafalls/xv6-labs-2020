@@ -30,16 +30,6 @@ procinit(void)
   initlock(&pid_lock, "nextpid");
   for(p = proc; p < &proc[NPROC]; p++) {
       initlock(&p->lock, "proc");
-
-      // Allocate a page for the process's kernel stack.
-      // Map it high in memory, followed by an invalid
-      // guard page.
-      char *pa = kalloc();
-      if(pa == 0)
-        panic("kalloc");
-      uint64 va = KSTACK((int) (p - proc));
-      kvmmap(va, (uint64)pa, PGSIZE, PTE_R | PTE_W);
-      p->kstack = va;
   }
   kvminithart();
 }
@@ -121,6 +111,24 @@ found:
     return 0;
   }
 
+  // Init a kernel page table.
+  p->ex_kernel_pagetable = proc_kernel_pagetable();
+  if(p->ex_kernel_pagetable == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  // Allocate a page for the process's kernel stack.
+  // Map it high in memory, followed by an invalid
+  // guard page.
+  char *pa = kalloc();
+  if(pa == 0)
+    panic("kalloc");
+  uint64 va = KSTACK((int) (p - proc));
+  uvmmap(p->ex_kernel_pagetable, va, (uint64)pa, PGSIZE, PTE_R | PTE_W);  // modified
+  p->kstack = va;
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -141,6 +149,11 @@ freeproc(struct proc *p)
   p->trapframe = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
+  // free the kernel stack in the RAM
+  uvmunmap(p->ex_kernel_pagetable, p->kstack, 1, 1);  // 解除内核栈映射并释放物理内存
+  p->kstack = 0;
+  if(p->ex_kernel_pagetable)
+    proc_freekpt(p->ex_kernel_pagetable);   // 释放进程的内核页表
   p->pagetable = 0;
   p->sz = 0;
   p->pid = 0;
@@ -473,7 +486,14 @@ scheduler(void)
         // before jumping back to us.
         p->state = RUNNING;
         c->proc = p;
-        swtch(&c->context, &p->context);
+
+          // 在这里将进程的内核页表传给SATP寄存器
+        proc_kvminithart(p->ex_kernel_pagetable);
+
+        swtch(&c->context, &p->context);  // CPU 的控制权会从调度器转移到选定的进程 p
+
+          // 没有进程运行时切换回原来的内核页表
+        kvminithart();
 
         // Process is done running for now.
         // It should have changed its p->state before coming back.

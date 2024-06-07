@@ -6,6 +6,9 @@
 #include "defs.h"
 #include "fs.h"
 
+#include "spinlock.h" 
+#include "proc.h"
+
 /*
  * the kernel's page table.
  */
@@ -55,6 +58,14 @@ void
 kvminithart()
 {
   w_satp(MAKE_SATP(kernel_pagetable));
+  sfence_vma();
+}
+
+// Store process's kernel page table to SATP register
+void
+proc_kvminithart(pagetable_t kpt)
+{
+  w_satp(MAKE_SATP(kpt));   // 把原来的内核页表地址传给satp寄存器
   sfence_vma();
 }
 
@@ -134,7 +145,8 @@ kvmpa(uint64 va)
   pte_t *pte;
   uint64 pa;
   
-  pte = walk(kernel_pagetable, va, 0);
+  //pte = walk(kernel_pagetable, va, 0);
+  pte = walk(myproc()->ex_kernel_pagetable, va, 0);  //  使用进程的内核页表
   if(pte == 0)
     panic("kvmpa");
   if((*pte & PTE_V) == 0)
@@ -478,4 +490,65 @@ vmprint(pagetable_t pagetable)
 {
   printf("page table %p\n", pagetable);
   _vmprint(pagetable, 1);
+}
+
+// 添加一个辅助函数,功能和kvmmap一样
+void
+uvmmap(pagetable_t kpgtbl, uint64 va, uint64 pa, uint64 sz, int perm)
+{
+  if(mappages(kpgtbl, va, sz, pa, perm) != 0)
+    panic("uvmmap");
+}
+
+// Make a direct-map page table for the kernel.
+pagetable_t
+proc_kernel_pagetable()
+{
+  pagetable_t kpgtbl;
+
+  // An empty page table.  参照proc.c中的proc_pagetable()
+  kpgtbl = uvmcreate();
+  if(kpgtbl == 0)
+    return 0;
+
+  // uart registers
+  uvmmap(kpgtbl, UART0, UART0, PGSIZE, PTE_R | PTE_W);  //  将UART0映射到内核的地址空间
+
+  // virtio mmio disk interface
+  uvmmap(kpgtbl, VIRTIO0, VIRTIO0, PGSIZE, PTE_R | PTE_W);
+
+  uvmmap(kpgtbl, CLINT, CLINT, 0x10000, PTE_R | PTE_W);
+
+  // PLIC
+  uvmmap(kpgtbl, PLIC, PLIC, 0x400000, PTE_R | PTE_W);
+
+  // map kernel text executable and read-only.
+  uvmmap(kpgtbl, KERNBASE, KERNBASE, (uint64)etext-KERNBASE, PTE_R | PTE_X);
+
+  // map kernel data and the physical RAM we'll make use of.
+  uvmmap(kpgtbl, (uint64)etext, (uint64)etext, PHYSTOP-(uint64)etext, PTE_R | PTE_W);
+
+  // map the trampoline for trap entry/exit to
+  // the highest virtual address in the kernel.
+  uvmmap(kpgtbl, TRAMPOLINE, (uint64)trampoline, PGSIZE, PTE_R | PTE_X);
+  
+  return kpgtbl;
+}
+
+void
+proc_freekpt(pagetable_t kpt)
+{
+  // there are 2^9 = 512 PTEs in a page table.
+  for(int i = 0; i < 512; i++){
+    pte_t pte = kpt[i];
+    if (pte & PTE_V) {  // 有效页表
+      kpt[i] = 0;
+      if ((pte & (PTE_R|PTE_W|PTE_X)) == 0) {
+        // this PTE points to a lower-level page table.
+        uint64 child = PTE2PA(pte);
+        proc_freekpt((pagetable_t)child);  // 递归
+      }    
+    } 
+  }
+  kfree((void*)kpt);
 }
