@@ -461,8 +461,10 @@ _vmprint(pagetable_t pagetable, int level)
       }
 
       uint64 child = PTE2PA(pte);
+
       printf("%d: pte %p pa %p\n", i, pte, child);
       if ((pte & (PTE_R|PTE_W|PTE_X))  == 0)
+
       // 该PTE指向下一级页表
       {
         _vmprint((pagetable_t) child, level+1);   // 递归
