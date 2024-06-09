@@ -168,6 +168,7 @@ void            kvmmap(uint64, uint64, uint64, int);
 void            uvmmap(pagetable_t, uint64, uint64, uint64, int);  // copy from kvmmap
 int             mappages(pagetable_t, uint64, uint64, uint64, int);
 pagetable_t     uvmcreate(void);
+void            setupuvm2kvm(pagetable_t, pagetable_t, uint64, uint64);
 void            uvminit(pagetable_t, uchar *, uint);
 uint64          uvmalloc(pagetable_t, uint64, uint64);
 uint64          uvmdealloc(pagetable_t, uint64, uint64);
@@ -187,6 +188,10 @@ void            vmprint(pagetable_t);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 void            vmprint(pagetable_t);
+
+// vmcopyin.c
+int             copyin_new(pagetable_t, char *, uint64, uint64);
+int             copyinstr_new(pagetable_t, char *, uint64, uint64);
 
 // plic.c
 void            plicinit(void);

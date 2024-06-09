@@ -243,6 +243,10 @@ userinit(void)
 
   p->state = RUNNABLE;
 
+  /// TODO: 解释为什么要在这里调用？
+  // 将用户进程地址映射至用户内核页表中
+   setupuvm2kvm(p->pagetable, p->ex_kernel_pagetable, 0, p->sz);
+
   release(&p->lock);
 }
 
@@ -262,6 +266,8 @@ growproc(int n)
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
+  // 将用户进程地址映射至用户内核页表中
+  setupuvm2kvm(p->pagetable, p->ex_kernel_pagetable, p->sz, sz);
   p->sz = sz;
   return 0;
 }
@@ -307,6 +313,9 @@ fork(void)
   pid = np->pid;
 
   np->state = RUNNABLE;
+
+  // 将用户进程地址映射至用户内核页表中
+  setupuvm2kvm(np->pagetable, np->ex_kernel_pagetable, 0, np->sz);
 
   release(&np->lock);
 
