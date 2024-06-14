@@ -132,3 +132,18 @@ printfinit(void)
   initlock(&pr.lock, "pr");
   pr.locking = 1;
 }
+
+/**
+ * @brief 回溯函数调用的返回地址
+*/
+void
+backtrace()
+{
+  uint64 kstack = myproc()->kstack;
+  printf("backtrace:\n");
+  // 调用r_fp来获取当前的帧指针, PGROUNDDOWN用于将地址向下舍入到最接近的页面边界，上一个函数的帧指针在上面偏移16字节的位置
+  for (uint64 fp = r_fp(); PGROUNDDOWN(fp) == kstack; fp = *(uint64*)(fp-16))
+  {
+    printf("%p\n", *(uint64*)(fp-8));  // 打印函数返回地址
+  }
+}
