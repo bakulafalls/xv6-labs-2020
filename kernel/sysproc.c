@@ -97,3 +97,20 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+uint64
+sys_sigalarm(void)
+{
+  if (argint(0, &myproc()->alarm_interaval) < 0 ||
+    argaddr(1, &myproc()->alarm_handler) < 0)
+    return -1;
+  return 0;
+}
+
+uint64
+sys_sigreturn(void)
+{
+  memmove(myproc()->trapframe, myproc()->alarm_trapframe, sizeof(struct trapframe));
+  myproc()->is_alarming = 0;  // 标记警报结束，进程可以执行下一次警报
+  return 0;
+}

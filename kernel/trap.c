@@ -78,7 +78,21 @@ usertrap(void)
 
   // give up the CPU if this is a timer interrupt.
   if(which_dev == 2)
+  {
+    // 如果倒计时为0，重置为初始值， 正常来讲只在第一次进入时有用
+    if (p->alarm_count_down == 0) {
+        p->alarm_count_down = p->alarm_interaval;
+    }
+   
+    if (p->alarm_interaval > 0 && --p->alarm_count_down == 0 && p->is_alarming == 0) {          // 报警 倒计时结束后触发警报
+      memmove(p->alarm_trapframe, p->trapframe, sizeof(struct trapframe));  // // 保存寄存器内容
+      p->trapframe->epc = p->alarm_handler;    // 使trap结束后返回警报处理函数
+      p->alarm_count_down = p->alarm_interaval;  // 重置倒计时
+      p->is_alarming = 1; // 标记现在正在触发警报
+    }
+
     yield();
+  }
 
   usertrapret();
 }
