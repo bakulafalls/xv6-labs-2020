@@ -68,17 +68,17 @@ usertrap(void)
   } else if((which_dev = devintr()) != 0){
     // ok
   } 
-  else if (r_scause() == 15) {
-    uint64 va = r_stval();
+  else if (r_scause() == 15 || r_scause() == 13) {  // page fault
+    uint64 va = r_stval();  // where the page fault is 
     printf("page fault %p\n", va);
     uint64 ka = (uint64) kalloc();
-    if (ka == 0) {
+    if (ka == 0) {  // OOM
       p->killed = 1;
     }
     else {
       memset((void *) ka, 0, PGSIZE);
       va = PGROUNDDOWN(va);
-      if (mappages(p->pagetable, va, PGSIZE, ka, PTE_W|PTE_U|PTE_R) !=0) {
+      if (mappages(p->pagetable, va, PGSIZE, ka, PTE_W|PTE_U|PTE_R|PTE_X) !=0) {
         kfree((void *)ka);
         p->killed = 1;
       }
