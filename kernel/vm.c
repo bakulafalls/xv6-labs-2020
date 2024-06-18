@@ -450,7 +450,9 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 
 /**
  * @brief COW fork allocator
- * @return 0 -> alloc failed
+ * @param mem new physical page for child process
+ * @param pa parent's physical page
+ * @return 0 => alloc failed
  * @return the physical address va eventually mapped to
 */
 void*
@@ -458,32 +460,31 @@ cowalloc(pagetable_t pagetable, uint64 va)
 {
   pte_t* pte = walk(pagetable, va, 0);  
   if(pte == 0) 
-    // panic("cowalloc: Invalid pte");
-    return 0;
-  if((*pte & PTE_F) == 1)  // Check if the va is on COW fork page
-    goto cow;
-  else
+    return 0;  // Invalid pte
+
+  if((*pte & PTE_F) == 0)  // Check if the va is on COW fork page
     return 0;
 
-  cow:
   uint64 pa = walkaddr(pagetable, va);  // Get PA
   if(pa == 0)
     return 0;  // not mapped
 
-  char* mem = kalloc();  
+  char* mem = kalloc();  // create a new physical apge
   if(mem == 0)
     return 0;  // OOM
   
   // Copy parent's physical page to Child's physical page mem
   memmove(mem, (char*)pa, PGSIZE);
-
-  *pte &= ~PTE_V;  // clear PTE_V so that we can use mappages() to map again
+  
+  // clear PTE_V so that we can use mappages() to map again
+  *pte &= ~PTE_V;  
+  
   // Map va to mem, set PTE_W to 1, clear PTE_F
   if(mappages(pagetable, va, PGSIZE, (uint64)mem, (PTE_FLAGS(*pte) | PTE_W) & ~PTE_F) != 0) {
     kfree(mem);
-    *pte = *pte | PTE_V;  // Reset PTE_V incase
+    *pte |= PTE_V;  // Reset PTE_V incase cowalloc failed but we still need to use this PTE
     return 0;
   }
 
-  return mem;
+  return (void*)mem;
 }

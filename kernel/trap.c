@@ -73,10 +73,8 @@ usertrap(void)
     uint64 va = r_staval();  // where the page fault is
     if(va >= p->sz)
       p->killed = 1;
-    // if (va对应PTE的PTE_F被设置)
-      // char *pa = kalloc(); 给va分配新的页面
-      // memmove(pa, (char*)walkaddr(p->pageteble, va)); 将对应的pa copy 到新page
-      // 用mappages将pa映射到va上
+    if(cowalloc(p->pagetable, va) == 0)  // alloc new page for COW fork va
+      p->killed = 1;
   }
   else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
