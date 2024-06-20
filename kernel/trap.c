@@ -70,10 +70,11 @@ usertrap(void)
     // ok
   } 
   else if(cause == 13 || cause == 15) {  // page fault
-    uint64 va = r_staval();  // where the page fault is
+    uint64 va = r_stval();  // where the page fault is
     if(va >= p->sz)
       p->killed = 1;
-    if(cowalloc(p->pagetable, va) == 0)  // alloc new page for COW fork va
+    // alloc new page for COW fork va  
+    if(iscowpage(p->pagetable, va) != 0 || cowalloc(p->pagetable, PGROUNDDOWN(va)) == 0)  
       p->killed = 1;
   }
   else {

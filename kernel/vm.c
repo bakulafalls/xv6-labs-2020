@@ -311,7 +311,6 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  // char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -327,19 +326,14 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
       *pte = PA2PTE(pa) | flags;
     }
 
-    // if((mem = kalloc()) == 0)
-    //   goto err;
-    // memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, pa, flags) != 0){  // map parent's pa to child's va
-      // kfree(mem);
-      goto err;
+    if(mappages(new, i, PGSIZE, pa, flags) != 0) {  // map parent's pa to child's va
+      uvmunmap(new, 0, i / PGSIZE, 1);
+      return -1;
     }
+    // COW page 引用计数+1
+      kadd_cow_ref_count(pa);
   }
   return 0;
-
- err:
-//   uvmunmap(new, 0, i / PGSIZE, 1);
-  return -1;
 }
 
 // mark a PTE invalid for user access.
@@ -366,6 +360,12 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
+   
+    if(iscowpage(pagetable, va0) == 0) {  // alloc new page for COW fork va
+      pa0 = (uint64)cowalloc(pagetable, va0);
+    }  
+      
+
     if(pa0 == 0)
       return -1;
     n = PGSIZE - (dstva - va0);
@@ -449,6 +449,25 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 }
 
 /**
+ * @brief check if va is on cow page
+ * @return 0 yes
+ * @return -1 no
+*/
+int
+iscowpage(pagetable_t pagetable, uint64 va)
+{
+  if(va >= MAXVA)
+    return -1;
+  pte_t* pte = walk(pagetable, va, 0);
+  if(pte == 0)
+    return -1;
+  if((*pte & PTE_V) == 0)
+    return -1;
+  return (*pte & PTE_F ? 0 : -1);
+}
+
+
+/**
  * @brief COW fork allocator
  * @param mem new physical page for child process
  * @param pa parent's physical page
@@ -458,33 +477,38 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 void*
 cowalloc(pagetable_t pagetable, uint64 va)
 {
-  pte_t* pte = walk(pagetable, va, 0);  
-  if(pte == 0) 
-    return 0;  // Invalid pte
-
-  if((*pte & PTE_F) == 0)  // Check if the va is on COW fork page
+  if(va % PGSIZE != 0)
     return 0;
-
+  pte_t* pte = walk(pagetable, va, 0);  
   uint64 pa = walkaddr(pagetable, va);  // Get PA
+
   if(pa == 0)
     return 0;  // not mapped
 
-  char* mem = kalloc();  // create a new physical apge
-  if(mem == 0)
-    return 0;  // OOM
-  
-  // Copy parent's physical page to Child's physical page mem
-  memmove(mem, (char*)pa, PGSIZE);
-  
-  // clear PTE_V so that we can use mappages() to map again
-  *pte &= ~PTE_V;  
-  
-  // Map va to mem, set PTE_W to 1, clear PTE_F
-  if(mappages(pagetable, va, PGSIZE, (uint64)mem, (PTE_FLAGS(*pte) | PTE_W) & ~PTE_F) != 0) {
-    kfree(mem);
-    *pte |= PTE_V;  // Reset PTE_V incase cowalloc failed but we still need to use this PTE
-    return 0;
+  if(get_cow_ref_count(pa)  == 1) {  // only one proc maps to this pa, no need to copy 
+    *pte |= PTE_W;
+    *pte &= ~PTE_F;
+    return (void*)pa;
   }
+  else {  // multi-proc map to this pa, need to kalloc, memmove and mappages
+      char* mem = kalloc();  // create a new physical apge
+      if(mem == 0)
+        return 0;  // OOM
+      
+      // Copy parent's physical page to Child's physical page mem
+      memmove(mem, (char*)pa, PGSIZE);
+      
+      // clear PTE_V so that we can use mappages() to map again
+      *pte &= ~PTE_V;  
+      
+      // Map va to mem, set PTE_W to 1, clear PTE_F
+      if(mappages(pagetable, va, PGSIZE, (uint64)mem, (PTE_FLAGS(*pte) | PTE_W) & ~PTE_F) != 0) {
+        kfree(mem);
+        *pte |= PTE_V;  // Reset PTE_V incase cowalloc failed but we still need to use this PTE
+        return 0;
+      }
 
-  return (void*)mem;
+      kfree((char*)PGROUNDDOWN(pa));
+      return (void*)mem;
+  }
 }
