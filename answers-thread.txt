@@ -1,0 +1,2 @@
+Q1: Why are there missing keys with 2 threads, but not with 1 thread? Identify a sequence of events with 2 threads that can lead to a key being missing. 
+A1: If key%NBUCKET has the same value in thread1 and thread2, there's a chance that they call insert() to insert value to the same bucket at the same time. So the first-inseted-data could be overwritten if its thread haven't returned yet. 
