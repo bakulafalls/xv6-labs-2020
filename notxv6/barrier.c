@@ -30,7 +30,23 @@ barrier()
   // Block until all threads have called barrier() and
   // then increment bstate.round.
   //
-  
+
+  pthread_mutex_lock(&bstate.barrier_mutex);  // acqr lock
+
+  bstate.nthread++;  // this thread has arrived the barrier
+
+  // 所有线程到达屏障时增加计数
+  if(bstate.nthread == nthread) {
+    bstate.round ++;
+    bstate.nthread = 0;  // 重置到达屏障的线程数
+    pthread_cond_broadcast(&bstate.barrier_cond);  //  Wake up all threads waiting for barrier_cond.
+  }
+  else {
+    // wait for other threads
+    pthread_cond_wait(&bstate.barrier_cond, &bstate.barrier_mutex);   // 在barrier_cond上进入睡眠，释放mutex锁，在醒来时重新获取
+  }
+
+  pthread_mutex_unlock(&bstate.barrier_mutex);  // release lock  
 }
 
 static void *
