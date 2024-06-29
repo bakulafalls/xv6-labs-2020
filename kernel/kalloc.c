@@ -21,12 +21,17 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+} kmem[NCPU];
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
+  // 
+  char lockname[8];  // 5(kmem_)+2(i)+1(\0)
+  for(int i = 0; i < NCPU; i++) {
+    snprintf(lockname, sizeof(lockname), "kmem_%d", i);
+    initlock(&kmem[i].lock, lockname);  // 给第i个CPU初始化锁
+  }
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -56,10 +61,13 @@ kfree(void *pa)
 
   r = (struct run*)pa;
 
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  push_off();  // disable the intr
+  int id = cpuid();  // get current cpu id. must turn off the intr before calling this.
+  acquire(&kmem[id].lock);
+  r->next = kmem[id].freelist;
+  kmem[id].freelist = r;
+  release(&kmem[id].lock);
+  pop_off();  // enble the intr
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -70,11 +78,32 @@ kalloc(void)
 {
   struct run *r;
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
+  push_off();  // disable the intr
+  int id = cpuid();  // get current cpu id. must turn off the intr before calling this.
+
+  acquire(&kmem[id].lock);
+  r = kmem[id].freelist;
   if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+    kmem[id].freelist = r->next;
+  else {  // this cpu doesn't have free block, need to "steal" from other cpu 
+    for(int i = 0; i < NCPU; i++) {  // start to check every ohter cpu
+      if(i == id) 
+        continue; 
+      else {  // i is a cpuid of another cpu
+        acquire(&kmem[i].lock);
+        r = kmem[i].freelist;
+        if(r) {  // cpu i has free block to steal from
+          kmem[i].freelist = r->next;  // steal r, cpui's freelist starts from r->next
+          release(&kmem[i].lock);
+          break;
+        } 
+        else 
+          release(&kmem[i].lock);
+      }
+    }
+  }
+  release(&kmem[id].lock);
+  pop_off();  // enble the intr
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
