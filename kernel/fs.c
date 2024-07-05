@@ -400,6 +400,38 @@ bmap(struct inode *ip, uint bn)
     brelse(bp);
     return addr;
   }
+  bn -= NINDIRECT;
+
+  if(bn < NININDIRCT) {
+    // 加载一级间接块，必要时分配
+    if((addr = ip->addrs[NDIRECT + 1]) == 0)
+      ip->addrs[NDIRECT + 1] = addr = balloc(ip->dev);
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;  // 指向一级间接块的数据区域
+
+    // 计算索引
+    uint index1 = bn / NINDIRECT;  // 一级间接块中的索引
+    uint index2 = bn % NINDIRECT;  // 二级间接块中的索引
+
+    // 加载二级间接块，必要时分配
+    if((addr = a[index1]) == 0){
+      a[index1] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+
+    // 读取二级间接块
+    bp = bread(ip->dev, addr);
+    a = (uint*)bp->data;  // // 指向二级间接块的数据区域
+
+    // 分配实际的数据块
+    if((addr = a[index2]) == 0){
+      a[index2] = addr = balloc(ip->dev);
+      log_write(bp);
+    }
+    brelse(bp);
+    return addr;
+  }
 
   panic("bmap: out of range");
 }
@@ -411,7 +443,9 @@ itrunc(struct inode *ip)
 {
   int i, j;
   struct buf *bp;
+  struct buf *bp1;
   uint *a;
+  uint *b;
 
   for(i = 0; i < NDIRECT; i++){
     if(ip->addrs[i]){
@@ -432,6 +466,26 @@ itrunc(struct inode *ip)
     ip->addrs[NDIRECT] = 0;
   }
 
+  if(ip->addrs[NDIRECT+1]) {
+    bp = bread(ip->dev, ip->addrs[NDIRECT+1]);
+    a = (uint*)bp->data;  // 指向一级间接块的数据区域
+    for(i = 0; i < NINDIRECT; i++) {
+      if(a[i]) {
+        bp1 = bread(ip->dev, a[i]);
+        b = (uint*)bp1->data;
+        for(j = 0; j < NINDIRECT; j++) {
+          if(b[j])
+            bfree(ip->dev, b[j]);
+        }
+        brelse(bp1);
+        bfree(ip->dev, a[i]);
+    }
+  }
+  brelse(bp);
+  bfree(ip->dev, ip->addrs[NDIRECT+1]);
+  ip->addrs[NDIRECT+1] = 0;
+  }
+  
   ip->size = 0;
   iupdate(ip);
 }
