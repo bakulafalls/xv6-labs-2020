@@ -1,8 +1,8 @@
 # Lab9 File system
 本实验分支：
 ```sh
-$ git fs
-$ git checkout thread
+$ git fetch
+$ git checkout fs
 $ make clean
 ```
 
