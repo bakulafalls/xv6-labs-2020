@@ -2,8 +2,8 @@
 在本实验中，您将获得重新设计代码以提**高并行性**的经验。多核机器上并行性差的一个常见症状是频繁的锁争用。提高并行性通常涉及**更改数据结构**和**锁定策略以减少争用**。您将对xv6内存分配器和块缓存执行此操作。
 本实验分支：
 ```sh
-$ git lock
-$ git checkout thread
+$ git fetch
+$ git checkout lock
 $ make clean
 ```
 ## Task1 Memory allocator
